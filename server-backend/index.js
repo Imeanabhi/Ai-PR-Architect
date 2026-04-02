@@ -10,67 +10,91 @@ app.use(express.json());
 
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
-// Helper function to parse GitHub URL: https://github.com/owner/repo/pull/1
+// Robust GitHub URL Parser
 const parseGitHubUrl = (url) => {
-  const parts = url.split("/");
-  return {.
-    owner: parts[3],
-    repo: parts[4],
-    pull_number: parts[6],
-  };
-};
+  const cleanUrl = url.split("?")[0]; // Remove ?expand=1
+  const parts = cleanUrl.split("/");
+  const owner = parts[3];
+  const repo = parts[4];
 
+  if (cleanUrl.includes("/compare/")) {
+    const comparisonPath = cleanUrl.split("/compare/")[1];
+    const branches = comparisonPath.split("...");
+
+    // If URL is just /compare/feature-branch, base is 'main'
+    const base = branches.length > 1 ? branches[0] : "main";
+    const head = branches.length > 1 ? branches[1] : branches[0];
+
+    return { owner, repo, type: "compare", base, head };
+  }
+
+  return { owner, repo, type: "pull", pull_number: parts[6] };
+};
+// Add this so your browser shows something friendly
+app.get("/", (req, res) => {
+  res.send("🚀 PR Architect Backend is live and listening for the extension!");
+});
 app.post("/generate-summary", async (req, res) => {
   const { prUrl, hfToken } = req.body;
+  console.log(`🚀 Processing Request for: ${prUrl}`);
 
   try {
-    const { owner, repo, pull_number } = parseGitHubUrl(prUrl);
+    const info = parseGitHubUrl(prUrl);
+    let diffData;
 
-    // 1. Fetch the "Diff" (The actual code changes) from GitHub
-    const { data: diff } = await octokit.pulls.get({
-      owner,
-      repo,
-      pull_number: parseInt(pull_number),
-      mediaType: { format: "diff" }, // This gets the text representation of changes
-    });
+    // Inside app.post("/generate-summary", ...)
+    if (info.type === "compare") {
+      console.log(`🔍 Comparing: ${info.base} ↔ ${info.head}`);
 
-    // 2. Prepare the Prompt for Hugging Face
-    // We trim the diff if it's too long for the AI model's context window
-    const cleanDiff = diff.substring(0, 3000);
+      const { data } = await octokit.repos.compareCommits({
+        owner: info.owner,
+        repo: info.repo,
+        // Use the 'base...head' syntax which is often more robust
+        basehead: `${info.base}...${info.head}`,
+        headers: {
+          accept: "application/vnd.github.v3.diff", // Explicitly ask for diff
+        },
+      });
+      diffData = data;
+    } else {
+      console.log(`🔍 Fetching PR: #${info.pull_number}`);
+      const { data } = await octokit.pulls.get({
+        owner: info.owner,
+        repo: info.repo,
+        pull_number: parseInt(info.pull_number),
+        mediaType: { format: "diff" },
+      });
+      diffData = data;
+    }
 
+    // Prepare AI Prompt
+    const cleanDiff = diffData.substring(0, 4000);
     const prompt = `### Instruction:
-Summarize the following GitHub Pull Request code changes into a professional PR description. 
-Use bullet points for features, bug fixes, and refactors.
+Summarize the following code changes into a professional PR description. Use bullet points.
 
 ### Git Diff:
 ${cleanDiff}
 
 ### Response:`;
 
-    // 3. Call Hugging Face Inference API (using Llama 3 or Mistral)
+    // Call Hugging Face
     const aiResponse = await axios.post(
       "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct",
       { inputs: prompt },
       { headers: { Authorization: `Bearer ${hfToken}` } },
     );
 
-    // 4. Return the generated text back to the Chrome Extension
+    const fullText = aiResponse.data[0].generated_text;
     const summary =
-      aiResponse.data[0].generated_text.split("### Response:")[1] ||
-      "AI couldn't generate a summary.";
+      fullText.split("### Response:")[1] || "Summary generated successfully.";
 
     res.json({ summary: summary.trim() });
+    console.log("✅ Summary sent to extension!");
   } catch (error) {
-    console.error(error);
-    res
-      .status(500)
-      .json({
-        error: "Failed to generate summary. Check your tokens and URL.",
-      });
+    console.error("❌ Error:", error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () =>
-  console.log(`🚀 Server running on http://localhost:${PORT}`),
-);
+app.listen(PORT, () => console.log(`🚀 Server on http://localhost:${PORT}`));
