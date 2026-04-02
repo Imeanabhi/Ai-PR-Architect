@@ -13,7 +13,7 @@ const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 // Helper function to parse GitHub URL: https://github.com/owner/repo/pull/1
 const parseGitHubUrl = (url) => {
   const parts = url.split("/");
-  return {.
+  return {
     owner: parts[3],
     repo: parts[4],
     pull_number: parts[6],
@@ -62,11 +62,9 @@ ${cleanDiff}
     res.json({ summary: summary.trim() });
   } catch (error) {
     console.error(error);
-    res
-      .status(500)
-      .json({
-        error: "Failed to generate summary. Check your tokens and URL.",
-      });
+    res.status(500).json({
+      error: "Failed to generate summary. Check your tokens and URL.",
+    });
   }
 });
 
