@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "AI PR Architect",
+  "version": "1.0",
+  "description": "Auto-generate PR descriptions using AI",
+  "permissions": ["activeTab", "storage", "scripting"],
+  "host_permissions": [
+    "https://github.com/*",
+    "https://api-inference.huggingface.co/*",
+    "http://localhost:5000/*"
+  ],
+  "action": {
+    "default_popup": "index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://github.com/*/compare/*",
+        "https://github.com/*/pull/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
