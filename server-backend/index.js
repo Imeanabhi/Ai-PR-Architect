@@ -1,7 +1,6 @@
 const express = require("express");
 const cors = require("cors");
 const { Octokit } = require("@octokit/rest");
-const axios = require("axios");
 require("dotenv").config();
 
 const app = express();
@@ -30,69 +29,151 @@ const parseGitHubUrl = (url) => {
   }
 };
 
-app.post("/generate-summary", async (req, res) => {
-  const { prUrl, hfToken } = req.body;
+app.get("/", (req, res) => {
+  res.send(`<h1>🚀 Backend is Online (AI-Free Mode)</h1>`);
+});
+
+app.post("/generate-pr-summary", async (req, res) => {
+  console.log("📥 Generating PR summary without AI...");
+  const { prUrl } = req.body;
+
   const info = parseGitHubUrl(prUrl);
-  if (!info) return res.status(400).json({ error: "Invalid URL" });
+  if (!info) {
+    return res.status(400).json({ error: "Invalid GitHub URL" });
+  }
 
   try {
-    let diffData;
+    let commits = [];
+    let files = [];
+    let title = "";
+    let description = "";
+
+    // Fetch PR data based on URL type
     if (info.type === "compare") {
+      // New PR being created
       const { data } = await octokit.repos.compareCommits({
         owner: info.owner,
         repo: info.repo,
-        base: `${info.owner}:${info.base}`,
-        head: `${info.owner}:${info.head}`,
-        mediaType: { format: "diff" },
+        base: info.base,
+        head: info.head,
       });
-      diffData = data;
+
+      commits = data.commits || [];
+      files = data.files || [];
+      title = `PR: ${info.head} → ${info.base}`;
     } else {
+      // Existing PR
       const { data } = await octokit.pulls.get({
         owner: info.owner,
         repo: info.repo,
         pull_number: parseInt(info.pull_number),
-        mediaType: { format: "diff" },
       });
-      diffData = data;
+
+      commits = data.commits || [];
+      files = data.files || [];
+      title = data.title || `PR #${info.pull_number}`;
+      description = data.body || "";
     }
 
-    const cleanDiff = diffData.substring(0, 4000);
-    const modelId = "mistralai/Mistral-7B-Instruct-v0.3";
-    const routerURL = `https://router.huggingface.co/hf-inference/v1/chat/completions`;
+    // Build the summary
+    let summary = "";
 
-    const aiResponse = await axios.post(
-      routerURL,
-      {
-        model: modelId,
-        messages: [
-          {
-            role: "system",
-            content:
-              "Summarize code changes into a professional PR description with bullet points.",
-          },
-          { role: "user", content: `Here is the git diff:\n\n${cleanDiff}` },
-        ],
-        max_tokens: 500,
-      },
-      { headers: { Authorization: `Bearer ${hfToken}` } },
+    // Title
+    summary += `# ${title}\n\n`;
+
+    // Stats
+    summary += `## 📊 Summary\n`;
+    summary += `- **Commits:** ${commits.length}\n`;
+    summary += `- **Files Changed:** ${files.length}\n\n`;
+
+    // Commit messages
+    if (commits.length > 0) {
+      summary += `## 📝 Commit History\n\n`;
+      commits.forEach((commit, index) => {
+        const message = commit.commit.message.split("\n")[0];
+        const author =
+          commit.author?.login || commit.commit.author?.name || "Unknown";
+        summary += `${index + 1}. **${message}** (${author})\n`;
+      });
+      summary += `\n`;
+    }
+
+    // File changes
+    if (files.length > 0) {
+      summary += `## 📁 Files Changed\n\n`;
+      summary += `| File | Status | Additions | Deletions |\n`;
+      summary += `|------|--------|-----------|-----------|\n`;
+
+      files.slice(0, 20).forEach((file) => {
+        const status =
+          file.status === "modified"
+            ? "✏️ Modified"
+            : file.status === "added"
+              ? "➕ Added"
+              : "➖ Removed";
+        const additions = file.additions || 0;
+        const deletions = file.deletions || 0;
+        summary += `| \`${file.filename}\` | ${status} | +${additions} | -${deletions} |\n`;
+      });
+
+      if (files.length > 20) {
+        summary += `\n*... and ${files.length - 20} more files*\n`;
+      }
+      summary += `\n`;
+    }
+
+    // Code changes summary
+    const totalAdditions = files.reduce(
+      (sum, file) => sum + (file.additions || 0),
+      0,
+    );
+    const totalDeletions = files.reduce(
+      (sum, file) => sum + (file.deletions || 0),
+      0,
     );
 
-    const summary = aiResponse.data.choices[0].message.content;
-    res.json({ summary: summary.trim() });
+    summary += `## 🔢 Code Changes\n`;
+    summary += `- **Total Additions:** +${totalAdditions}\n`;
+    summary += `- **Total Deletions:** -${totalDeletions}\n`;
+    summary += `- **Net Change:** ${totalAdditions - totalDeletions > 0 ? "+" : ""}${totalAdditions - totalDeletions}\n\n`;
+
+    // File type breakdown
+    const extensions = {};
+    files.forEach((file) => {
+      const ext = file.filename.split(".").pop() || "no-extension";
+      extensions[ext] = (extensions[ext] || 0) + 1;
+    });
+
+    if (Object.keys(extensions).length > 0) {
+      summary += `## 🏷️ File Types\n\n`;
+      Object.entries(extensions)
+        .slice(0, 10)
+        .forEach(([ext, count]) => {
+          summary += `- **.${ext}**: ${count} file${count > 1 ? "s" : ""}\n`;
+        });
+      summary += `\n`;
+    }
+
+    // Action items
+    summary += `## ✅ Review Checklist\n\n`;
+    summary += `- [ ] Verify code changes are correct\n`;
+    summary += `- [ ] Check for any breaking changes\n`;
+    summary += `- [ ] Ensure tests pass\n`;
+    summary += `- [ ] Confirm documentation is updated\n\n`;
+
+    // Footer
+    summary += `---\n`;
+    summary += `*Generated by PR Architect (AI-Free Mode)*\n`;
+
+    res.json({ summary: summary });
+    console.log("✅ PR Summary generated successfully!");
   } catch (error) {
+    console.error("❌ Error:", error.message);
     res.status(500).json({ error: error.message });
   }
 });
-// This tells the browser what to show on the main page
-app.get("/", (req, res) => {
-  res.send(`
-    <div style="font-family: sans-serif; text-align: center; padding-top: 50px;">
-      <h1 style="color: #238636;">🚀 PR Architect Backend is Live</h1>
-      <p>Listening for requests from the Chrome Extension...</p>
-      <div style="margin-top: 20px; padding: 10px; background: #f6f8fa; display: inline-block; border-radius: 6px;">
-        Status: <span style="color: green;">● Healthy</span>
-      </div>
-    </div>
-  `);
+
+app.listen(5000, () => {
+  console.log(`🚀 Server running on http://localhost:5000`);
+  console.log(`📝 AI-Free Mode - No API keys required!`);
 });
-app.listen(5000, () => console.log(`🚀 Server: http://localhost:5000`));
