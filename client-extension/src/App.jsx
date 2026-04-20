@@ -1,66 +1,45 @@
-import { useEffect, useState } from "react";
 import "./App.css";
 
 function App() {
-  const [apiKey, setApiKey] = useState("");
-  const [isSaved, setIsSaved] = useState(false);
-
-  useEffect(() => {
-    if (typeof chrome !== "undefined" && chrome.storage) {
-      chrome.storage.local.get(["hf_api_key"], (res) => {
-        if (res.hf_api_key) setApiKey(res.hf_api_key);
-      });
-    }
-  }, []);
-
-  const handleSave = () => {
-    if (typeof chrome !== "undefined" && chrome.storage) {
-      chrome.storage.local.set({ hf_api_key: apiKey }, () => {
-        setIsSaved(true);
-        setTimeout(() => setIsSaved(false), 2000);
-      });
-    }
-  };
-
   return (
     <div className="container">
       <header className="header">
-        <span className="logo-emoji">🤖</span>
+        <span className="logo-emoji">📊</span>
         <h1>PR Architect</h1>
       </header>
-      <div className="form-group">
-        <label className="label">Hugging Face Token</label>
-        <input
-          type="password"
-          className="input-field"
-          placeholder="hf_..."
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-        />
-      </div>
-      <button className="btn-primary" onClick={handleSave} disabled={!apiKey}>
-        {isSaved ? "Saved!" : "Save Configuration"}
-      </button>
+
       <div className="status-card">
         <div className="status-title">System Status</div>
 
         <div className="status-item">
           <div className="status-content">
-            <div className={`dot ${apiKey ? "online" : "offline"}`}></div>
-            <span>AI Engine</span>
+            <div className="dot online"></div>
+            <span>AI-Free Mode</span>
           </div>
-          <span style={{ color: "var(--text-secondary)" }}>
-            {apiKey ? "Ready" : "Missing Token"}
-          </span>
+          <span style={{ color: "var(--text-secondary)" }}>Active</span>
         </div>
 
         <div className="status-item">
           <div className="status-content">
-            <div className="dot pending"></div>
+            <div className="dot online"></div>
             <span>Backend</span>
           </div>
           <span style={{ color: "var(--text-secondary)" }}>Phase 2</span>
         </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: "20px",
+          fontSize: "12px",
+          color: "#666",
+          textAlign: "center",
+        }}
+      >
+        ✓ No API keys required
+        <br />
+        ✓ Works immediately
+        <br />✓ Generates summaries from commit history
       </div>
     </div>
   );
