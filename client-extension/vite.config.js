@@ -8,13 +8,14 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
-        content: resolve(__dirname, "src/content/index.js"),
+        content: resolve(__dirname, "src/content/index.js"), // Point to your content script
       },
       output: {
-        // Keep it simple so all scripts are in the root of /dist
-        entryFileNames: "[name].js",
-        chunkFileNames: "[name].js",
-        assetFileNames: "[name].[ext]",
+        entryFileNames: (chunkInfo) => {
+          return chunkInfo.name === "content"
+            ? "content.js"
+            : "assets/[name]-[hash].js";
+        },
       },
     },
   },
